@@ -80,6 +80,11 @@ struct cap_text_entry{
 	unsigned int    data_pos;
 };
 
+struct cache_entry {
+	unsigned int 	hash;
+	unsigned char 	block[BLOCK_LEN];
+};
+
 struct capsule_text {
 	// CapTextList represents the head of a linked list 
 	//	See capsule_structures.c for creation with LIST_HEAD	
@@ -108,6 +113,8 @@ struct capsule_text {
 	/* capsule length */
 	unsigned int    	file_len;
 
+
+	struct cache_entry* cache;
 };
 
 

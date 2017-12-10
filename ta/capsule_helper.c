@@ -187,16 +187,108 @@ void lua_close_context( lua_State **L ) {
 	*L = NULL;
 }
 
+void print_bytes(const void *object, size_t size)
+{
+  // This is for C++; in C just drop the static_cast<>() and assign.
+  const unsigned char * const bytes = object;
+  size_t i;
+
+  MSG("[ ");
+  for(i = 0; i < size; i++)
+  {
+    MSG("%02x ", bytes[i]);
+  }
+  MSG("]\n");
+}
+
 /* Read a chunk of data */
 // TODO JAMES: caching
+// uint32_t read_block( int fd, void* buf, size_t blen, uint32_t off ) {
+// 	uint32_t nr = 0, read = 0;
+// 	uint32_t ns = off;
+// 	int block_num = 0;
+// 	uint64_t cnt_a, cnt_b;
+
+// 	MSG("read_block: fd %d, buf: %p, blen: %zu, off: %u", fd, buf, blen, off);
+
+// 	do {
+// 		cnt_a = read_cntpct();
+
+// 		// get block num
+// 		block_num = (off + read) / BLOCK_LEN;
+
+// 		MSG("block_num: %d, nr: %u, read; %u, ns: %u", block_num, nr, read, ns);
+
+// 		if (cap_head.cache != NULL && cap_head.cache[block_num].hash == block_num + 1) {
+// 			// cache hit
+// 			memcpy(buf + read, ((void*)&cap_head.cache[block_num].block) + ((off+read) % BLOCK_LEN), blen - read);
+// 			MSG("cache hit, copying %d bytes from %p (+%u) to %p", 
+// 				blen - read, 
+// 				((void*)&cap_head.cache[block_num].block) + ((off+read) % BLOCK_LEN), 
+// 				((off+read) % BLOCK_LEN),
+// 				buf + read);
+// 			nr = blen - read;
+// 			// TODO: handling weird sized block with eof?
+// 		} else {
+// 			// cache miss: read entire block, and return segment wanted
+// 			if (cap_head.cache != NULL) {
+// 				// Read from fd at off+read to the cache at block_num, for BLOCK_LEN
+// 				// returns nr, num bytes read
+// 				TEE_SimpleRead( fd, &cap_head.cache[block_num].block, BLOCK_LEN, &nr, block_num * BLOCK_LEN);
+// 				MSG("cache miss, reading from fd %d at %u for %d bytes to %p. Successfully read %u bytes.", fd, block_num * BLOCK_LEN, BLOCK_LEN, &cap_head.cache[block_num].block, nr);
+
+
+// 				// TODO: check for eof?
+// 				// set cache entry hash to block_num + 1
+// 				cap_head.cache[block_num].hash = block_num + 1;
+// 				// copy from cache block
+// 				nr = nr > (blen - read) ? blen - read : nr;
+
+				
+
+// 				MSG("copying %d from %p (+%u) to %p\n", 
+// 					nr, 
+// 					((void*) &cap_head.cache[block_num].block) + ((off + read) % BLOCK_LEN),
+// 					((off+read) % BLOCK_LEN),
+// 					buf + read);
+// 				MSG("block mem start: %p, block_num: %d, cache start: %p, read: %u", &cap_head.cache[block_num].block, block_num, cap_head.cache, read);
+// 				memcpy(buf + read, ((void*)&cap_head.cache[block_num].block) + ((off+read) % BLOCK_LEN), nr);
+// 			} else {
+// 				TEE_SimpleRead( fd, ( (unsigned char*) buf ) + read, blen - read, &nr, off);
+// 			}
+// 		}
+
+// 	   	cnt_b = read_cntpct();
+// 		timestamps[curr_ts].rpc_calls += cnt_b - cnt_a;
+// 		if( (int) nr < 0 ) {
+// 			return nr;
+// 		}
+// 		ns += nr;
+// 		read += nr;	
+// 	} while( read < blen && nr > 0 );
+// 	return read;
+// }
+
 uint32_t read_block( int fd, void* buf, size_t blen, uint32_t off ) {
 	uint32_t nr = 0, read = 0;
 	uint64_t cnt_a, cnt_b;
+	int block_num = 0;
+	MSG("read_block: fd %d, buf: %p, blen: %zu, off: %u", fd, buf, blen, off);
+
 	do {
+		block_num = (off + read) / BLOCK_LEN;
+
+		MSG("block_num: %d, nr: %u, read; %u", block_num, nr, read);
 		cnt_a = read_cntpct();
 		TEE_SimpleRead( fd, ( (unsigned char*) buf ) + read, 
 						     blen - read, &nr, off );
 	   	cnt_b = read_cntpct();
+	   	MSG("writing %u bytes to %p (+%u) from fd %d at %u", 
+	   		blen-read, 
+	   		( (unsigned char*) buf ) + read, 
+	   		read, 
+	   		fd,
+	   		off);
 		timestamps[curr_ts].rpc_calls += cnt_b - cnt_a;
 		if( (int) nr < 0 ) {
 			return nr;
@@ -210,11 +302,19 @@ uint32_t read_block( int fd, void* buf, size_t blen, uint32_t off ) {
 /* Write a chunk of data */
 uint32_t write_block( int fd, void* buf, size_t blen, uint32_t off ) {
 	uint32_t nw = 0, written = 0;
+	uint32_t ns = off;
 	uint64_t cnt_a, cnt_b;
 	do {
 		cnt_a = read_cntpct();
 		TEE_SimpleWrite( fd, ( (unsigned char*) buf ) + written, 
 							  blen - written, &nw, off );
+
+		// if (cap_head.cache[ns/BLOCK_LEN].hash == ns/BLOCK_LEN + 1) {
+		// 	// cache hit
+		// 	memcpy(&cap_head.cache[ns/BLOCK_LEN].block, buf + off, blen - off);
+		// 	MSG("cache hit, copying %d bytes from %p to %p", BLOCK_LEN, (void*)&cap_head.cache[ns/BLOCK_LEN].block, buf);
+		// }
+
 		cnt_b = read_cntpct();
 		timestamps[curr_ts].rpc_calls += cnt_b - cnt_a;
 		if( (int) nw < 0 ) {
@@ -474,11 +574,11 @@ TEE_Result read_enc_file_block( int fd, unsigned char* ptx,
 
 	*plen = ptxlen - ( before + after );
 
-	//DMSG( "offset: %d, bl_off: %u, bl_len: %u, aligned_off: %u," 
-	//	 " aligned_end: %u, ptxlen: %u, ctr: %u, before: %u, "
-	//	 " after: %u, nr: %d, rlen: %u, plen: %u", 
-	//	  ns, bl_off, bl_len, aligned_off, aligned_end, ptxlen, 
-	//	  init_ctr, before, after, nr, rlen, *plen );
+	MSG( "bl_off: %u, bl_len: %u, aligned_off: %u," 
+		 " aligned_end: %u, ptxlen: %u, ctr: %u, before: %u, "
+		 " after: %u, nr: %d, rlen: %u, plen: %u", 
+		  bl_off, bl_len, aligned_off, aligned_end, ptxlen, 
+		  init_ctr, before, after, nr, rlen, *plen );
 	return res;
 }
 
@@ -523,7 +623,7 @@ bool verify_hash( uint32_t ch, struct HashList *head,
 
 	/* Get the right hash in the hashlist */
 	while( p != NULL ) {
-		//MSG( "p->chnum %d, ch %d", p->chnum, ch );
+		MSG( "p->chnum %d, ch %d", p->chnum, ch );
 		if( p->chnum == ch ) { 
 			found = 1;
 			break;
@@ -532,17 +632,17 @@ bool verify_hash( uint32_t ch, struct HashList *head,
 	}
 	
 	if( found == 0 ) {
-		//MSG( "No hash for this chunk was found" );
+		MSG( "No hash for this chunk was found" );
 		return true;
 	}
 	
-	//MSG( "CHUNK %u, %02x%02x%02x%02x%02x%02x%02x%02x", ch,
-	//	 p->hash[0], p->hash[1], p->hash[2], p->hash[3], p->hash[4],
-	//	 p->hash[5], p->hash[6], p->hash[7] );
+	MSG( "CHUNK %u, %02x%02x%02x%02x%02x%02x%02x%02x", ch,
+		 p->hash[0], p->hash[1], p->hash[2], p->hash[3], p->hash[4],
+		 p->hash[5], p->hash[6], p->hash[7] );
 
-	//MSG( "CHUNK %u, %02x%02x%02x%02x%02x%02x%02x%02x", ch,
-	//	 hash[0], hash[1], hash[2], hash[3], hash[4],
-	//	 hash[5], hash[6], hash[7] );
+	MSG( "CHUNK %u, %02x%02x%02x%02x%02x%02x%02x%02x", ch,
+		 hash[0], hash[1], hash[2], hash[3], hash[4],
+		 hash[5], hash[6], hash[7] );
 	
 	return compare_hashes( hash, p->hash, hlen );
 }

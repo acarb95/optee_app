@@ -751,6 +751,9 @@ TEE_Result do_open( int fd, int state_tgid, int state_fd ) {
 	struct cap_text_entry  *new_entry;
 
 
+	int num_blocks;
+
+
 	/* Initalize the capsule's text index structure and header if this is the first
 	 * open call. Otherwise, we create a new capsule_text_entries struct and add it
 	 * to the list */
@@ -780,10 +783,15 @@ TEE_Result do_open( int fd, int state_tgid, int state_fd ) {
 		ch_last_len = header.capsize - hlen - 
 				      ch_end * ( symm_chunk_size + hlen );
 
+		// TODO james: check for 0 len capsize
+		num_blocks = 1 + ((header.capsize - 1) / BLOCK_LEN);
+		cap_head.cache = TEE_Malloc(sizeof(struct cache_entry) * num_blocks, 0);
+		MSG("allocating %d blocks, %zu each. capsize: %u", num_blocks, sizeof(struct cache_entry), header.capsize);
+
 		//MSG( "ch_start: %u, ch_end: %u, ch_last_len: %u, header: %u", 
 		//	 ch_start, ch_end, ch_last_len, header.capsize );
 
-		//MSG( "ptx: %s", ptx);
+		MSG( "ptx: %s", ptx);
 
 		for( ch_curr = ch_start; ch_curr <= ch_end; ch_curr++ ) {
 			
@@ -793,7 +801,7 @@ TEE_Result do_open( int fd, int state_tgid, int state_fd ) {
 					res = TEE_ERROR_NOT_SUPPORTED;
 					CHECK_SUCCESS( res, "Read_hash()-> Incorrect format" );
 				}
-				//MSG( "About to call add_to_hashlist" );
+				MSG( "About to call add_to_hashlist" );
 				add_to_hashlist( hash, hlen, &hash_head, ch_curr );
 			}
 
@@ -813,13 +821,18 @@ TEE_Result do_open( int fd, int state_tgid, int state_fd ) {
                 if (plen <= 0){
                     return TEE_ERROR_GENERIC; // why?
                 }
+
+                // TODO james: memcpy here from ptx
+                // TODO james: do a hash
+                // memcpy(cap_head.cache[hash].block, ptx, BLOCK_LEN);
+                
 				res = hash_block( ptx, plen, NULL, hlen, 
 								  false, hash_op );
 		   		CHECK_SUCCESS( res, "Hash_block() Update Error" );
 
-				//MSG( "ch_cnt: %u, ch_size: %u, plen: %u, ptx: %02x%02x%02x"
-				//	 " %02x%02x%02x", ch_cnt, ch_size, plen, ptx[0], ptx[1], 
-				//	 ptx[2], ptx[1021], ptx[1022], ptx[1023]);
+				MSG( "ch_cnt: %u, ch_size: %u, plen: %u, ptx: %02x%02x%02x"
+					 " %02x%02x%02x", ch_cnt, ch_size, plen, ptx[0], ptx[1], 
+					 ptx[2], ptx[1021], ptx[1022], ptx[1023]);
 		
 				/*Index the contents of the file*/
  				sep_policy_and_data( ptx, plen, &cap_head,
@@ -1455,7 +1468,9 @@ void do_close( int state_tgid, int state_fd ) {
 	if( cap_head.proc_entries.first == NULL ) {
 		free_hashlist( &hash_head );
 		LIST_INIT( &hash_head );
-	}		
+	}
+
+	TEE_Free(cap_head.cache);		
 }
 
 TEE_Result do_register_aes( uint32_t keyType, uint32_t id, 
